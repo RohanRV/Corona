@@ -14,7 +14,7 @@ def _find_closest_year_row(df, year=2020):
     """Returns the row which is closest to the year specified (in either direction)"""
     df = df.copy()
     df['year'] = df['year'].sort_values(ascending=True)
-    return df.loc[df['year'].map(lambda x: abs(x - 2020)).idxmin()]
+    return df.loc[df['year'].map(lambda x: abs(x - year)).idxmin()]
 
 def load_population(year=2020):
     df = pd.read_csv(
@@ -180,10 +180,6 @@ days_since_spec = {
         'col': 'new_cases',
         'threshold': 50
     },
-    'days_since_30_new_cases_7_day_avg': {
-        'col': 'new_cases_7_day_avg',
-        'threshold': 30
-    },
     'days_since_10_new_deaths': {
         'col': 'new_deaths',
         'threshold': 10
@@ -195,10 +191,6 @@ days_since_spec = {
     'days_since_3_new_deaths': {
         'col': 'new_deaths',
         'threshold': 3
-    },
-    'days_since_5_new_deaths_7_day_avg': {
-        'col': 'new_deaths_7_day_avg',
-        'threshold': 5
     },
     'days_since_30_new_cases_7_day_avg_right': {
         'col': 'new_cases_7_day_avg_right',
@@ -222,20 +214,31 @@ days_since_spec = {
     },
 }
 
-def _get_date_of_nth(df, col, nth):
+def _get_date_of_nth(df, col, threshold):
     try:
-        df_gt_nth = df[df[col] >= nth]
-        earliest = df.loc[pd.to_datetime(df_gt_nth['date']).idxmin()]
-        return earliest['date']
-    except:
+        df = df.sort_values(by=['date'])
+        nth_row = df[df[col] >= threshold].iloc[0]
+        if nth_row[col] == threshold:
+            return nth_row['date']
+        else:
+            before_nth_row = df[df[col].shift(-1) >= threshold].iloc[0]
+            before_date, after_date = before_nth_row['date'], nth_row['date']
+            before_value, after_value = before_nth_row[col], nth_row[col]
+            # the shift had no effect because there is no item before
+            if before_date == after_date:
+                return nth_row['date']
+            if pd.isna(before_value) or pd.isna(after_value):
+                return None
+            return pd.to_datetime(before_date) + ((after_date - before_date) * ((threshold - before_value) / (after_value - before_value)))
+    except IndexError:
         return None
 
 def _positive_date_diff(a, b):
-    diff = (a - b).days
-    return diff if diff >= 0 else None
+    diff = (a - b).total_seconds() / (60*60*24)
+    return diff if diff > -1 else None
 
 def _inject_days_since(df, col, ref_date):
-    df[col] = df['date'].map(lambda date: _positive_date_diff(pd.to_datetime(date), pd.to_datetime(ref_date))).astype('Int64')
+    df[col] = df['date'].map(lambda date: _positive_date_diff(pd.to_datetime(date), pd.to_datetime(ref_date)))
     df = df
     return df
 
